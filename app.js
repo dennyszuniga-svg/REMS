@@ -3,9 +3,13 @@ const STORAGE = {
   records: "rems-demo-records-v1",
 };
 
-const PEOPLE = ["Personal 1", "Personal 2", "Personal 3", "Personal 4"].map((name, index) => ({
-  id: `personal-${index + 1}`,
-  name,
+const PEOPLE = [
+  { id: "giancarlo-bertarelli", name: "Giancarlo Bertarelli", dni: "por definir" },
+  { id: "claudia-mongrut", name: "Claudia Mongrut", dni: "por definir" },
+  { id: "ricardo-montalvo", name: "Ricardo Montalvo", dni: "por definir" },
+  { id: "samir-ruiz", name: "Samir Ruiz", dni: "por definir" },
+].map((person) => ({
+  ...person,
   schedule: "08:00–15:45",
 }));
 
@@ -177,7 +181,7 @@ function renderAdmin() {
   list.replaceChildren(...PEOPLE.map((person, index) => {
     const row = document.createElement("div");
     row.className = "person-row";
-    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${person.name}</strong><span>${person.schedule} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span>`;
+    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${person.name}</strong><span>DNI: ${person.dni} · ${person.schedule} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span>`;
     const button = document.createElement("button");
     button.className = "secondary";
     button.textContent = savedFaces[person.id] ? "Actualizar" : "Registrar";
