@@ -1,0 +1,14 @@
+{
+  "id": ".",
+  "name": "Registro de Asistencia REMS",
+  "short_name": "Asistencia REMS",
+  "description": "Sistema de marcación facial para SEDE 1 REMS.",
+  "lang": "es-PE",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f5f6f7",
+  "theme_color": "#ef4d2d",
+  "categories": ["business", "productivity"]
+}
