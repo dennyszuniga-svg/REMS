@@ -206,7 +206,7 @@ async function createOrReplaceSession(account, email, password) {
   } catch (error) {
     const hasActiveSession = error?.type === "user_session_already_active" || /session is active/i.test(error?.message || "");
     if (!hasActiveSession) throw error;
-    await account.deleteSession({ sessionId: "current" });
+    await account.deleteSession("current");
     await account.createEmailPasswordSession(email, password);
   }
 }
@@ -237,12 +237,12 @@ async function loginWithCredentials(event) {
       return;
     }
 
-    if (current) await account.deleteSession({ sessionId: "current" });
+    if (current) await account.deleteSession("current");
     await createOrReplaceSession(account, email, password);
     current = await account.get();
     const role = roleForAccount(current);
     if (!role) {
-      await account.deleteSession({ sessionId: "current" });
+      await account.deleteSession("current");
       throw new Error("Esta cuenta no tiene un perfil autorizado.");
     }
     $("password").value = "";
@@ -271,7 +271,7 @@ async function restoreSession() {
 
 async function logout() {
   closeFace();
-  try { await getAccountApi().deleteSession({ sessionId: "current" }); } catch { /* La sesión ya pudo haber expirado. */ }
+  try { await getAccountApi().deleteSession("current"); } catch { /* La sesión ya pudo haber expirado. */ }
   state.role = null;
   state.account = null;
   state.peopleReady = Promise.resolve();
