@@ -8,10 +8,40 @@ const FALLBACK_PEOPLE = [
   { id: "claudia-mongrut", name: "Claudia Mongrut", dni: "por definir" },
   { id: "ricardo-montalvo", name: "Ricardo Montalvo", dni: "por definir" },
   { id: "samir-ruiz", name: "Samir Ruiz", dni: "por definir" },
-].map((person) => ({
-  ...person,
-  schedule: "08:00–15:45",
-}));
+];
+
+const SCHEDULE_WEEKS = [
+  { label: "21 al 26 sep.", start: "2026-09-21", end: "2026-09-26", pattern: "A" },
+  { label: "28 sep. al 3 oct.", start: "2026-09-28", end: "2026-10-03", pattern: "B" },
+  { label: "5 al 10 oct.", start: "2026-10-05", end: "2026-10-10", pattern: "A" },
+  { label: "12 al 17 oct.", start: "2026-10-12", end: "2026-10-17", pattern: "B" },
+  { label: "19 al 24 oct.", start: "2026-10-19", end: "2026-10-24", pattern: "A" },
+  { label: "26 al 31 oct.", start: "2026-10-26", end: "2026-10-31", pattern: "B" },
+  { label: "2 al 7 nov.", start: "2026-11-02", end: "2026-11-07", pattern: "A" },
+  { label: "9 al 14 nov.", start: "2026-11-09", end: "2026-11-14", pattern: "B" },
+  { label: "16 al 21 nov.", start: "2026-11-16", end: "2026-11-21", pattern: "A" },
+  { label: "23 al 28 nov.", start: "2026-11-23", end: "2026-11-28", pattern: "B" },
+  { label: "30 nov. al 5 dic.", start: "2026-11-30", end: "2026-12-05", pattern: "A" },
+  { label: "7 al 12 dic.", start: "2026-12-07", end: "2026-12-12", pattern: "B" },
+  { label: "14 al 19 dic.", start: "2026-12-14", end: "2026-12-19", pattern: "A" },
+  { label: "21 al 26 dic.", start: "2026-12-21", end: "2026-12-26", pattern: "B" },
+  { label: "28 dic. al 2 ene.", start: "2026-12-28", end: "2027-01-02", pattern: "A" },
+];
+
+const SHIFT_PATTERNS = {
+  A: {
+    "giancarlo-bertarelli": { weekdays: "07:00–17:00", saturday: "07:00–10:00" },
+    "claudia-mongrut": { weekdays: "09:00–19:00", saturday: "10:00–13:00" },
+    "ricardo-montalvo": { weekdays: "07:00–17:00", saturday: "07:00–10:00" },
+    "samir-ruiz": { weekdays: "09:00–19:00", saturday: "10:00–13:00" },
+  },
+  B: {
+    "giancarlo-bertarelli": { weekdays: "09:00–19:00", saturday: "10:00–13:00" },
+    "claudia-mongrut": { weekdays: "07:00–17:00", saturday: "07:00–10:00" },
+    "ricardo-montalvo": { weekdays: "09:00–19:00", saturday: "10:00–13:00" },
+    "samir-ruiz": { weekdays: "07:00–17:00", saturday: "07:00–10:00" },
+  },
+};
 
 let PEOPLE = [...FALLBACK_PEOPLE];
 
@@ -40,6 +70,38 @@ function personId(name, remoteId) {
 function setBackendStatus(message) {
   if ($("backendStatus")) $("backendStatus").textContent = message;
   if ($("peopleCount")) $("peopleCount").textContent = String(PEOPLE.length);
+}
+
+function localDateKey(date = new Date()) {
+  const local = new Date(date);
+  local.setMinutes(local.getMinutes() - local.getTimezoneOffset());
+  return local.toISOString().slice(0, 10);
+}
+
+function selectedScheduleWeek(date = new Date()) {
+  const key = localDateKey(date);
+  const active = SCHEDULE_WEEKS.find((week) => key >= week.start && key <= week.end);
+  if (active) return { ...active, status: "vigente" };
+  const upcoming = SCHEDULE_WEEKS.find((week) => key < week.start);
+  if (upcoming) return { ...upcoming, status: "próximo" };
+  return { ...SCHEDULE_WEEKS.at(-1), status: "último registrado" };
+}
+
+function personSchedule(personId, date = new Date()) {
+  const week = selectedScheduleWeek(date);
+  const shift = SHIFT_PATTERNS[week.pattern]?.[personId];
+  return {
+    ...week,
+    weekdays: shift?.weekdays || "Por definir",
+    saturday: shift?.saturday || "Por definir",
+  };
+}
+
+function renderScheduleSummary() {
+  const week = selectedScheduleWeek();
+  $("markerSchedule").textContent = `${week.status === "próximo" ? "Próxima" : "Semana"}: ${week.label}`;
+  $("scheduleWeek").textContent = week.label;
+  $("scheduleStatus").textContent = `${week.status} · turnos según persona`;
 }
 
 async function loadPeople() {
@@ -71,7 +133,6 @@ async function loadPeople() {
       appwriteId: row.$id,
       name: row.nombre,
       dni: row.dni || "por definir",
-      schedule: "08:00–15:45",
     }));
     state.peopleSource = "appwrite";
     setBackendStatus(`Appwrite conectado · ${PEOPLE.length} personas cargadas.`);
@@ -93,9 +154,7 @@ function saveJson(key, value) { localStorage.setItem(key, JSON.stringify(value))
 function faces() { return loadJson(STORAGE.faces, {}); }
 function records() { return loadJson(STORAGE.records, []); }
 function todayKey() {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 10);
+  return localDateKey();
 }
 function formatTime(value) {
   return new Date(value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -243,9 +302,10 @@ function renderAdmin() {
   const savedFaces = faces();
   const list = $("peopleList");
   list.replaceChildren(...PEOPLE.map((person, index) => {
+    const schedule = personSchedule(person.id);
     const row = document.createElement("div");
     row.className = "person-row";
-    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${person.name}</strong><span>DNI: ${person.dni} · ${person.schedule} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span>`;
+    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${person.name}</strong><span>DNI: ${person.dni} · L–V ${schedule.weekdays} · Sáb. ${schedule.saturday}</span><span>${schedule.status === "próximo" ? "Próxima semana" : "Semana"}: ${schedule.label} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span>`;
     const button = document.createElement("button");
     button.className = "secondary";
     button.textContent = savedFaces[person.id] ? "Actualizar" : "Registrar";
@@ -290,5 +350,6 @@ $("exportButton").addEventListener("click", exportRecords);
 window.addEventListener("pagehide", closeFace);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
+renderScheduleSummary();
 state.peopleReady = loadPeople();
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("service-worker.js").catch(() => {});

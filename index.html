@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="styles.css?v=4">
   <script src="assets/face-api.min.js"></script>
   <script src="appwrite-config.js?v=1"></script>
-  <script src="app.js?v=4" defer></script>
+  <script src="app.js?v=5" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -32,8 +32,8 @@
           <h2>Asistencia simple, segura y presencial</h2>
           <p>Esta primera versión funciona en modo de prueba. Los rostros y marcaciones permanecen únicamente en este dispositivo.</p>
           <div class="spec-grid">
-            <div><strong>08:00</strong><span>Ingreso</span></div>
-            <div><strong>15:45</strong><span>Salida</span></div>
+            <div><strong>Rotativo</strong><span>Horario por semana</span></div>
+            <div><strong>L–S</strong><span>Según cronograma</span></div>
             <div><strong>100 m</strong><span>Radio previsto</span></div>
           </div>
         </article>
@@ -59,7 +59,7 @@
           <div id="markerResult" class="result neutral" role="status">Listo para registrar.</div>
         </article>
         <div class="info-strip">
-          <div><span>Horario</span><strong>08:00–15:45</strong></div>
+          <div><span>Horario</span><strong id="markerSchedule">Según cronograma</strong></div>
           <div><span>Ubicación</span><strong>Pendiente de configurar</strong></div>
           <div><span>Radio</span><strong>100 metros</strong></div>
         </div>
@@ -72,7 +72,7 @@
         </div>
         <div class="summary-grid">
           <article><span>Personal</span><strong id="peopleCount">4</strong><small>cuentas registradas</small></article>
-          <article><span>Horario</span><strong>08:00</strong><small>salida 15:45</small></article>
+          <article><span>Horario</span><strong id="scheduleWeek">Rotativo</strong><small id="scheduleStatus">según cronograma</small></article>
           <article><span>Marcaciones hoy</span><strong id="todayMarks">0</strong><small>entradas y salidas</small></article>
         </div>
         <div class="admin-grid">

@@ -8,7 +8,7 @@ Prototipo inicial de marcación facial para un celular fijo en **SEDE 1 REMS**.
 - Sede: SEDE 1 REMS
 - Radio previsto: 100 m
 - Ubicación: pendiente
-- Horario: 08:00 a 15:45
+- Horarios: turnos rotativos por persona y semana, según el archivo `Horario equipo panorama.xlsx`
 - Personal inicial: Giancarlo Bertarelli, Claudia Mongrut, Ricardo Montalvo y Samir Ruiz
 - DNI inicial: por definir
 - Cuentas previstas: administrador y marcador
