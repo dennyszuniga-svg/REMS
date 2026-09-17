@@ -3,7 +3,7 @@ const STORAGE = {
   records: "rems-demo-records-v1",
 };
 
-const PEOPLE = [
+const FALLBACK_PEOPLE = [
   { id: "giancarlo-bertarelli", name: "Giancarlo Bertarelli", dni: "por definir" },
   { id: "claudia-mongrut", name: "Claudia Mongrut", dni: "por definir" },
   { id: "ricardo-montalvo", name: "Ricardo Montalvo", dni: "por definir" },
@@ -13,6 +13,8 @@ const PEOPLE = [
   schedule: "08:00–15:45",
 }));
 
+let PEOPLE = [...FALLBACK_PEOPLE];
+
 const $ = (id) => document.getElementById(id);
 const state = {
   role: null,
@@ -21,7 +23,68 @@ const state = {
   selectedPerson: null,
   enrollmentSamples: [],
   modelsReady: false,
+  peopleReady: null,
+  peopleSource: "local",
 };
+
+function personId(name, remoteId) {
+  const slug = String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return slug || remoteId;
+}
+
+function setBackendStatus(message) {
+  if ($("backendStatus")) $("backendStatus").textContent = message;
+  if ($("peopleCount")) $("peopleCount").textContent = String(PEOPLE.length);
+}
+
+async function loadPeople() {
+  const config = window.REMS_APPWRITE;
+  if (!config) {
+    setBackendStatus("Modo local: no se pudo cargar la conexión con Appwrite.");
+    return;
+  }
+
+  try {
+    const url = `${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(config.personalTableId)}/rows`;
+    const request = await fetch(url, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Appwrite-Project": config.projectId,
+      },
+    });
+    const response = await request.json();
+    if (!request.ok) {
+      const error = new Error(response.message || "No se pudo consultar Appwrite.");
+      Object.assign(error, response);
+      throw error;
+    }
+    if (!response.rows?.length) throw new Error("La tabla Personal todavía no tiene registros.");
+
+    PEOPLE = response.rows.map((row) => ({
+      id: personId(row.nombre, row.$id),
+      appwriteId: row.$id,
+      name: row.nombre,
+      dni: row.dni || "por definir",
+      schedule: "08:00–15:45",
+    }));
+    state.peopleSource = "appwrite";
+    setBackendStatus(`Appwrite conectado · ${PEOPLE.length} personas cargadas.`);
+  } catch (error) {
+    console.warn("No se pudo cargar Personal desde Appwrite; se usará el respaldo local.", error);
+    const detail = error?.code === 401 || error?.type === "user_unauthorized"
+      ? "falta autorizar la lectura de la tabla Personal"
+      : "conexión no disponible";
+    setBackendStatus(`Modo local activo · ${detail}.`);
+  }
+
+  if (state.role === "admin") renderAdmin();
+}
 
 function loadJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -66,6 +129,7 @@ async function loadModels() {
 }
 
 async function openFace(mode, person = null) {
+  await state.peopleReady;
   state.faceMode = mode;
   state.selectedPerson = person;
   state.enrollmentSamples = [];
@@ -226,4 +290,5 @@ $("exportButton").addEventListener("click", exportRecords);
 window.addEventListener("pagehide", closeFace);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
+state.peopleReady = loadPeople();
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("service-worker.js").catch(() => {});

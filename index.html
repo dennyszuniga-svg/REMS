@@ -8,7 +8,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css?v=2">
   <script src="assets/face-api.min.js"></script>
-  <script src="app.js?v=2" defer></script>
+  <script src="appwrite-config.js?v=1"></script>
+  <script src="app.js?v=4" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -67,13 +68,14 @@
           <button id="exportButton" class="secondary" type="button">Exportar registros</button>
         </div>
         <div class="summary-grid">
-          <article><span>Personal</span><strong>4</strong><small>cuentas de prueba</small></article>
+          <article><span>Personal</span><strong id="peopleCount">4</strong><small>cuentas registradas</small></article>
           <article><span>Horario</span><strong>08:00</strong><small>salida 15:45</small></article>
           <article><span>Marcaciones hoy</span><strong id="todayMarks">0</strong><small>entradas y salidas</small></article>
         </div>
         <div class="admin-grid">
           <article class="panel-card">
             <div class="section-heading compact"><div><span class="eyebrow">PERSONAL</span><h3>Registro facial</h3></div></div>
+            <p id="backendStatus" class="helper">Conectando con la base de datos REMS…</p>
             <p class="helper">Registra tres muestras por persona desde este dispositivo.</p>
             <div id="peopleList" class="people-list"></div>
           </article>
