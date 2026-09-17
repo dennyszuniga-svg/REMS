@@ -96,6 +96,11 @@ button:hover { transform: translateY(-1px); }
 .person-data, .record-data { min-width: 0; display: grid; gap: 3px; flex: 1; }
 .person-data span, .record-data span { color: var(--muted); font-size: .82rem; }
 .person-row button { padding: 9px 12px; font-size: .8rem; }
+.person-actions { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.person-actions button { padding: 8px 10px; font-size: .72rem; }
+.danger-button { color: #ffb1a7; background: rgba(180,35,24,.13); border: 1px solid rgba(255,170,162,.26); }
+.danger-button:hover { background: rgba(180,35,24,.28); }
+.small-button { padding: 10px 12px; font-size: .78rem; }
 .badge { padding: 6px 9px; border: 1px solid #38383d; border-radius: 3px 10px 3px 3px; font-size: .72rem; font-weight: 800; background: #242427; color: var(--muted); }
 .badge.ready { background: rgba(8,122,85,.18); color: #8be0be; border-color: rgba(139,224,190,.25); }
 .empty { padding: 24px; border: 1px dashed #46464c; border-radius: 14px; color: var(--muted); text-align: center; background: #171719; }
@@ -109,6 +114,23 @@ button:hover { transform: translateY(-1px); }
 .face-guide { position: absolute; inset: 12% 15%; border: 3px solid rgba(255,255,255,.85); border-radius: 48% 48% 44% 44%; box-shadow: 0 0 0 999px rgba(0,0,0,.16); }
 .camera-status { min-height: 44px; color: var(--muted); line-height: 1.45; }
 .modal-card .primary { width: 100%; }
+.compact-modal { width: min(460px,100%); }
+.management-form { display: grid; gap: 9px; }
+.management-form label, .schedule-toolbar label { color: #f4f4f5; font-size: .8rem; font-weight: 700; display: grid; gap: 6px; }
+.management-form input, .schedule-toolbar input, .schedule-day input[type="time"] { padding: 11px 12px; color: white; background: #1b1b1e; border: 1px solid #3a3a3f; border-radius: 3px 10px 3px 3px; font: inherit; }
+.management-form input:focus, .schedule-toolbar input:focus, .schedule-day input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(251,81,38,.14); }
+.form-status { min-height: 20px; margin: 3px 0; color: #ffaaa2; font-size: .82rem; }
+.schedule-modal-card { width: min(760px,100%); }
+.schedule-toolbar { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; margin: 18px 0 12px; }
+.bulk-days { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 3px 12px 3px 3px; background: #171719; color: var(--muted); font-size: .82rem; }
+.bulk-days label { color: white; }
+.bulk-days .small-button { margin-left: auto; }
+.monthly-schedule-days { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; max-height: 390px; overflow: auto; padding-right: 4px; }
+.schedule-day { display: grid; grid-template-columns: minmax(82px,1fr) 82px 10px 82px; align-items: center; gap: 6px; padding: 9px; color: var(--muted); border: 1px solid #35353a; border-radius: 3px 10px 3px 3px; background: #171719; font-size: .78rem; }
+.schedule-day.active { border-color: rgba(251,81,38,.55); background: #211613; color: white; }
+.schedule-day label { display: flex; align-items: center; gap: 5px; }
+.schedule-day input[type="time"] { width: 100%; padding: 7px 5px; font-size: .74rem; }
+.schedule-day input:disabled { opacity: .45; }
 @media (max-width: 760px) {
   .topbar { min-height: 126px; padding: 4px 14px 8px; gap: 10px; }
   .topbar img { width: 132px; height: 120px; }
@@ -123,5 +145,9 @@ button:hover { transform: translateY(-1px); }
   .section-heading { align-items: flex-start; }
   .person-row { flex-wrap: wrap; }
   .person-data { min-width: calc(100% - 60px); }
-  .person-row button { flex: 1; }
+  .person-actions { width: 100%; }
+  .person-actions button { flex: 1 1 42%; }
+  .schedule-toolbar { grid-template-columns: 1fr; }
+  .bulk-days .small-button { margin-left: 0; }
+  .monthly-schedule-days { grid-template-columns: 1fr; }
 }

@@ -57,6 +57,8 @@ const state = {
   peopleReady: null,
   peopleSource: "local",
   account: null,
+  schedulePersonId: null,
+  scheduleDraft: {},
 };
 
 function getAccountApi() {
@@ -125,11 +127,48 @@ function personSchedule(personId, date = new Date()) {
   };
 }
 
+function parseMonthlySchedule(value) {
+  if (!value) return {};
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch { return {}; }
+}
+
+function scheduleFor(person, date = new Date()) {
+  const day = localDateKey(date);
+  const month = day.slice(0, 7);
+  const monthly = person.monthlySchedule?.[month]?.[day];
+  if (monthly?.start && monthly?.end) return { ...monthly, source: "monthly" };
+  const fallback = personSchedule(person.legacyId || person.id, date);
+  if (fallback.weekdays === "Por definir") return null;
+  const weekday = new Date(`${day}T12:00:00`).getDay();
+  const hours = weekday === 6 ? fallback.saturday : fallback.weekdays;
+  if (weekday === 0 || !hours || hours === "Por definir") return null;
+  const [start, end] = hours.split("–");
+  return { start, end, source: "legacy" };
+}
+
 function renderScheduleSummary() {
+  const hasMonthlySchedule = PEOPLE.some((person) => Object.keys(person.monthlySchedule || {}).length);
   const week = selectedScheduleWeek();
-  $("markerSchedule").textContent = `${week.status === "próximo" ? "Próxima" : "Semana"}: ${week.label}`;
-  $("scheduleWeek").textContent = week.label;
-  $("scheduleStatus").textContent = `${week.status} · turnos según persona`;
+  $("markerSchedule").textContent = hasMonthlySchedule ? "Según programación mensual" : `${week.status === "próximo" ? "Próxima" : "Semana"}: ${week.label}`;
+  $("scheduleWeek").textContent = hasMonthlySchedule ? "Mensual" : week.label;
+  $("scheduleStatus").textContent = hasMonthlySchedule ? "editable por administrador" : `${week.status} · turnos según persona`;
+}
+
+async function personalRequest(path = "", method = "GET", data) {
+  const config = window.REMS_APPWRITE;
+  if (!config) throw new Error("No se encontró la conexión con la base de datos.");
+  const response = await fetch(`${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(config.personalTableId)}/rows${path}`, {
+    method,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", "X-Appwrite-Project": config.projectId },
+    ...(data ? { body: JSON.stringify(data) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || "No se pudo actualizar el personal.");
+  return payload;
 }
 
 async function loadPeople() {
@@ -140,30 +179,29 @@ async function loadPeople() {
   }
 
   try {
-    const url = `${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(config.personalTableId)}/rows`;
-    const request = await fetch(url, {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Appwrite-Project": config.projectId,
-      },
-    });
-    const response = await request.json();
-    if (!request.ok) {
-      const error = new Error(response.message || "No se pudo consultar Appwrite.");
-      Object.assign(error, response);
-      throw error;
-    }
+    const response = await personalRequest();
     if (!response.rows?.length) throw new Error("La tabla Personal todavía no tiene registros.");
 
     PEOPLE = response.rows.map((row) => ({
-      id: personId(row.nombre, row.$id),
+      id: row.$id,
+      legacyId: personId(row.nombre, row.$id),
       appwriteId: row.$id,
       name: row.nombre,
       dni: row.dni || "por definir",
+      monthlySchedule: parseMonthlySchedule(row.horario_mensual),
     }));
+    const saved = faces();
+    let migratedFaces = false;
+    PEOPLE.forEach((person) => {
+      if (person.legacyId !== person.id && saved[person.legacyId] && !saved[person.id]) {
+        saved[person.id] = saved[person.legacyId];
+        migratedFaces = true;
+      }
+    });
+    if (migratedFaces) saveJson(STORAGE.faces, saved);
     state.peopleSource = "appwrite";
     setBackendStatus(`Appwrite conectado · ${PEOPLE.length} personas cargadas.`);
+    renderScheduleSummary();
   } catch (error) {
     console.warn("No se pudo cargar Personal desde Appwrite; se usará el respaldo local.", error);
     const detail = error?.code === 401 || error?.type === "user_unauthorized"
@@ -384,6 +422,7 @@ async function capture() {
 function registerMark(person, score) {
   const all = records();
   const today = todayKey();
+  const scheduledShift = scheduleFor(person);
   const personToday = all.filter((item) => item.personId === person.id && item.date === today);
   const last = personToday.at(-1);
   const type = !last || last.type === "salida" ? "entrada" : "salida";
@@ -397,6 +436,7 @@ function registerMark(person, score) {
     faceDistance: Number(score.toFixed(5)),
     site: "SEDE 1 REMS",
     locationStatus: "pendiente",
+    scheduledShift: scheduledShift ? `${scheduledShift.start}–${scheduledShift.end}` : "Sin turno programado",
   };
   all.push(item);
   saveJson(STORAGE.records, all);
@@ -405,19 +445,22 @@ function registerMark(person, score) {
   result.textContent = `${person.name}: ${type} registrada a las ${formatTime(item.timestamp)}.`;
 }
 
+function personById(id) { return PEOPLE.find((person) => person.id === id); }
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+}
+
 function renderAdmin() {
   const savedFaces = faces();
   const list = $("peopleList");
   list.replaceChildren(...PEOPLE.map((person, index) => {
-    const schedule = personSchedule(person.id);
+    const schedule = scheduleFor(person);
     const row = document.createElement("div");
     row.className = "person-row";
-    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${person.name}</strong><span>DNI: ${person.dni} · L–V ${schedule.weekdays} · Sáb. ${schedule.saturday}</span><span>${schedule.status === "próximo" ? "Próxima semana" : "Semana"}: ${schedule.label} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span>`;
-    const button = document.createElement("button");
-    button.className = "secondary";
-    button.textContent = savedFaces[person.id] ? "Actualizar" : "Registrar";
-    button.addEventListener("click", () => openFace("enroll", person));
-    row.append(button);
+    const hours = schedule ? `Hoy: ${schedule.start}–${schedule.end}` : "Hoy: sin turno programado";
+    const origin = schedule?.source === "monthly" ? "Programación mensual" : schedule ? "Cronograma vigente" : "Pendiente de programar";
+    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${escapeHtml(person.name)}</strong><span>DNI: ${escapeHtml(person.dni)} · ${hours}</span><span>${origin} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span><div class="person-actions"><button class="secondary" type="button" data-action="face" data-person-id="${person.id}">${savedFaces[person.id] ? "Actualizar rostro" : "Registrar rostro"}</button><button class="secondary" type="button" data-action="schedule" data-person-id="${person.id}">Horario mensual</button><button class="secondary" type="button" data-action="edit" data-person-id="${person.id}">Editar</button><button class="danger-button" type="button" data-action="delete" data-person-id="${person.id}">Eliminar</button></div>`;
     return row;
   }));
 
@@ -434,6 +477,85 @@ function renderAdmin() {
     row.innerHTML = `<div class="record-data"><strong>${item.personName}</strong><span>${item.type === "entrada" ? "Entrada" : "Salida"} · ${formatTime(item.timestamp)}</span></div><span class="badge ready">Facial</span>`;
     return row;
   }));
+}
+
+function openPersonModal(person = null) {
+  $("personModalTitle").textContent = person ? "Editar personal" : "Agregar personal";
+  $("personRowId").value = person?.appwriteId || "";
+  $("personName").value = person?.name || "";
+  $("personDni").value = person?.dni === "por definir" ? "" : person?.dni || "";
+  $("personFormStatus").textContent = "";
+  $("personModal").hidden = false;
+  $("personName").focus();
+}
+function closePersonModal() { $("personModal").hidden = true; }
+
+async function savePerson(event) {
+  event.preventDefault();
+  const name = $("personName").value.trim(); const dni = $("personDni").value.trim() || "por definir"; const rowId = $("personRowId").value;
+  if (!name) return;
+  const button = $("savePersonButton"); button.disabled = true;
+  try {
+    if (rowId) await personalRequest(`/${encodeURIComponent(rowId)}`, "PATCH", { data: { nombre: name, dni } });
+    else await personalRequest("", "POST", { rowId: "unique()", data: { nombre: name, dni, horario_mensual: "" } });
+    await loadPeople(); closePersonModal();
+  } catch (error) { $("personFormStatus").textContent = error.message || "No se pudo guardar el personal."; }
+  finally { button.disabled = false; }
+}
+
+async function deletePerson(person) {
+  if (!person?.appwriteId || !window.confirm(`¿Eliminar a ${person.name}? Sus marcaciones ya registradas no se borrarán.`)) return;
+  try {
+    await personalRequest(`/${encodeURIComponent(person.appwriteId)}`, "DELETE");
+    const saved = faces(); delete saved[person.id]; saveJson(STORAGE.faces, saved);
+    await loadPeople();
+  } catch (error) { window.alert(error.message || "No se pudo eliminar el personal."); }
+}
+
+function monthLabel(month) { return new Date(`${month}-01T12:00:00`).toLocaleDateString("es-PE", { month: "long", year: "numeric" }); }
+function closeScheduleModal() { $("scheduleModal").hidden = true; }
+function openScheduleModal(person) {
+  state.schedulePersonId = person.id; state.scheduleDraft = JSON.parse(JSON.stringify(person.monthlySchedule || {}));
+  $("schedulePersonName").textContent = person.name; $("scheduleMonth").value = localDateKey().slice(0, 7); $("scheduleFormStatus").textContent = "";
+  $("scheduleModal").hidden = false; renderMonthlyScheduleDays();
+}
+function renderMonthlyScheduleDays() {
+  const month = $("scheduleMonth").value; if (!month) return;
+  const [year, monthNumber] = month.split("-").map(Number); const daysInMonth = new Date(year, monthNumber, 0).getDate();
+  const dayNames = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]; const values = state.scheduleDraft[month] || {};
+  $("scheduleMonthLabel").textContent = monthLabel(month);
+  $("monthlyScheduleDays").innerHTML = Array.from({ length: daysInMonth }, (_, offset) => {
+    const day = String(offset + 1).padStart(2, "0"); const date = `${month}-${day}`; const entry = values[date]; const weekday = new Date(`${date}T12:00:00`).getDay();
+    return `<div class="schedule-day ${entry ? "active" : ""}" data-date="${date}"><label><input type="checkbox" data-field="active" ${entry ? "checked" : ""}> <strong>${dayNames[weekday]} ${day}</strong></label><input type="time" data-field="start" value="${entry?.start || "08:00"}" ${entry ? "" : "disabled"} aria-label="Hora de entrada ${date}"><span>–</span><input type="time" data-field="end" value="${entry?.end || "17:00"}" ${entry ? "" : "disabled"} aria-label="Hora de salida ${date}"></div>`;
+  }).join("");
+}
+function updateScheduleDay(target) {
+  const row = target.closest(".schedule-day"); if (!row) return;
+  const month = $("scheduleMonth").value; const date = row.dataset.date; state.scheduleDraft[month] ||= {};
+  if (target.dataset.field === "active") {
+    if (target.checked) state.scheduleDraft[month][date] = { start: row.querySelector('[data-field="start"]').value, end: row.querySelector('[data-field="end"]').value };
+    else delete state.scheduleDraft[month][date];
+    renderMonthlyScheduleDays(); return;
+  }
+  if (state.scheduleDraft[month][date]) state.scheduleDraft[month][date][target.dataset.field] = target.value;
+}
+function applyMonthlyHours() {
+  const month = $("scheduleMonth").value; const start = $("bulkStart").value; const end = $("bulkEnd").value;
+  if (!month || !start || !end) return;
+  const weekdays = [...document.querySelectorAll('input[name="bulkDay"]:checked')].map((input) => Number(input.value));
+  const [year, monthNumber] = month.split("-").map(Number); const daysInMonth = new Date(year, monthNumber, 0).getDate(); state.scheduleDraft[month] ||= {};
+  for (let number = 1; number <= daysInMonth; number += 1) { const date = `${month}-${String(number).padStart(2, "0")}`; if (weekdays.includes(new Date(`${date}T12:00:00`).getDay())) state.scheduleDraft[month][date] = { start, end }; }
+  renderMonthlyScheduleDays();
+}
+async function saveMonthlySchedule() {
+  const person = personById(state.schedulePersonId); if (!person?.appwriteId) return;
+  const button = $("saveScheduleButton"); button.disabled = true;
+  const selectedMonth = $("scheduleMonth").value;
+  const monthsToKeep = [selectedMonth, ...Object.keys(state.scheduleDraft).filter((month) => month !== selectedMonth).sort().reverse()].slice(0, 2);
+  const scheduleToSave = Object.fromEntries(monthsToKeep.map((month) => [month, state.scheduleDraft[month] || {}]));
+  try { await personalRequest(`/${encodeURIComponent(person.appwriteId)}`, "PATCH", { data: { horario_mensual: JSON.stringify(scheduleToSave) } }); await loadPeople(); closeScheduleModal(); }
+  catch (error) { $("scheduleFormStatus").textContent = error.message || "No se pudo guardar el horario."; }
+  finally { button.disabled = false; }
 }
 
 function exportRecords() {
@@ -453,6 +575,24 @@ $("startMarkButton").addEventListener("click", () => openFace("mark"));
 $("closeFaceButton").addEventListener("click", closeFace);
 $("captureButton").addEventListener("click", capture);
 $("exportButton").addEventListener("click", exportRecords);
+$("openNewPersonButton").addEventListener("click", () => openPersonModal());
+$("closePersonButton").addEventListener("click", closePersonModal);
+$("personForm").addEventListener("submit", savePerson);
+$("closeScheduleButton").addEventListener("click", closeScheduleModal);
+$("scheduleMonth").addEventListener("change", renderMonthlyScheduleDays);
+$("monthlyScheduleDays").addEventListener("change", (event) => updateScheduleDay(event.target));
+$("applyMonthlyHours").addEventListener("click", applyMonthlyHours);
+$("saveScheduleButton").addEventListener("click", saveMonthlySchedule);
+$("peopleList").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const person = personById(button.dataset.personId);
+  if (!person) return;
+  if (button.dataset.action === "face") openFace("enroll", person);
+  if (button.dataset.action === "schedule") openScheduleModal(person);
+  if (button.dataset.action === "edit") openPersonModal(person);
+  if (button.dataset.action === "delete") deletePerson(person);
+});
 window.addEventListener("pagehide", closeFace);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
