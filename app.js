@@ -200,6 +200,17 @@ async function enterRole(role, account) {
   if (role === "admin") renderAdmin();
 }
 
+async function createOrReplaceSession(account, email, password) {
+  try {
+    await account.createEmailPasswordSession(email, password);
+  } catch (error) {
+    const hasActiveSession = error?.type === "user_session_already_active" || /session is active/i.test(error?.message || "");
+    if (!hasActiveSession) throw error;
+    await account.deleteSession({ sessionId: "current" });
+    await account.createEmailPasswordSession(email, password);
+  }
+}
+
 async function loginWithCredentials(event) {
   event.preventDefault();
   const username = $("username").value.trim().toLowerCase();
@@ -215,8 +226,20 @@ async function loginWithCredentials(event) {
   setLoginStatus("Verificando acceso…", true);
   try {
     const account = getAccountApi();
-    await account.createEmailPasswordSession(email, password);
-    const current = await account.get();
+    let current = null;
+    try { current = await account.get(); } catch { /* No hay una sesión recuperable. */ }
+
+    const activeRole = roleForAccount(current);
+    if (current && activeRole && current.email === email) {
+      $("password").value = "";
+      setLoginStatus("");
+      await enterRole(activeRole, current);
+      return;
+    }
+
+    if (current) await account.deleteSession({ sessionId: "current" });
+    await createOrReplaceSession(account, email, password);
+    current = await account.get();
     const role = roleForAccount(current);
     if (!role) {
       await account.deleteSession({ sessionId: "current" });
