@@ -1,10 +1,10 @@
-const CACHE = "rems-asistencia-v9";
+const CACHE = "rems-asistencia-v10";
 const FILES = [
   "./",
   "./index.html",
   "./styles.css?v=4",
   "./appwrite-config.js?v=2",
-  "./app.js?v=6",
+  "./app.js?v=7",
   "./manifest.webmanifest",
   "./assets/rems-logo.png",
   "./assets/face-api.min.js",

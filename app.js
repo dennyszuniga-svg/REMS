@@ -215,7 +215,7 @@ async function loginWithCredentials(event) {
   setLoginStatus("Verificando acceso…", true);
   try {
     const account = getAccountApi();
-    await account.createEmailPasswordSession({ email, password });
+    await account.createEmailPasswordSession(email, password);
     const current = await account.get();
     const role = roleForAccount(current);
     if (!role) {
