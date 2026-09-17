@@ -3,6 +3,7 @@ window.REMS_APPWRITE = Object.freeze({
   projectId: "6aab14d50033fc31bd8c",
   databaseId: "rems-asistencia-db",
   personalTableId: "6aab1a950009349c3284",
+  markingsTableId: "marcaciones-rems",
   authUsers: Object.freeze({
     administrador: "administrador@rems.pe",
     marcador: "marcador@rems.pe",

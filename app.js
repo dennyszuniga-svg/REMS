@@ -59,6 +59,7 @@ const state = {
   account: null,
   schedulePersonId: null,
   scheduleDraft: {},
+  remoteRecords: [],
 };
 
 function getAccountApi() {
@@ -157,10 +158,10 @@ function renderScheduleSummary() {
   $("scheduleStatus").textContent = hasMonthlySchedule ? "editable por administrador" : `${week.status} · turnos según persona`;
 }
 
-async function personalRequest(path = "", method = "GET", data) {
+async function databaseRowsRequest(tableId, path = "", method = "GET", data) {
   const config = window.REMS_APPWRITE;
   if (!config) throw new Error("No se encontró la conexión con la base de datos.");
-  const response = await fetch(`${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(config.personalTableId)}/rows${path}`, {
+  const response = await fetch(`${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(tableId)}/rows${path}`, {
     method,
     credentials: "include",
     headers: { "Content-Type": "application/json", "X-Appwrite-Project": config.projectId },
@@ -169,6 +170,10 @@ async function personalRequest(path = "", method = "GET", data) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message || "No se pudo actualizar el personal.");
   return payload;
+}
+
+function personalRequest(path = "", method = "GET", data) {
+  return databaseRowsRequest(window.REMS_APPWRITE?.personalTableId, path, method, data);
 }
 
 async function loadPeople() {
@@ -219,6 +224,29 @@ function loadJson(key, fallback) {
 function saveJson(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 function faces() { return loadJson(STORAGE.faces, {}); }
 function records() { return loadJson(STORAGE.records, []); }
+function attendanceRecords() { return [...state.remoteRecords, ...records().filter((item) => !item.remoteId)]; }
+function remoteRecord(row) {
+  return { id: row.$id, remoteId: row.$id, personId: row.persona_id, personName: row.persona_nombre, type: row.tipo, date: row.fecha, timestamp: row.momento, site: row.sede, scheduledShift: row.turno || "Sin turno programado", faceDistance: Number(row.distancia || 0) };
+}
+async function loadRecords() {
+  const tableId = window.REMS_APPWRITE?.markingsTableId;
+  if (!tableId) return;
+  try { const response = await databaseRowsRequest(tableId); state.remoteRecords = (response.rows || []).map(remoteRecord); }
+  catch (error) { console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
+}
+async function syncRecord(item) {
+  const tableId = window.REMS_APPWRITE?.markingsTableId;
+  if (!tableId) throw new Error("No se configuró la tabla de marcaciones.");
+  const response = await databaseRowsRequest(tableId, "", "POST", { rowId: "unique()", data: { persona_id: item.personId, persona_nombre: item.personName, tipo: item.type, fecha: item.date, momento: item.timestamp, sede: item.site, turno: item.scheduledShift, distancia: String(item.faceDistance) } });
+  const local = records(); const index = local.findIndex((record) => record.id === item.id);
+  if (index >= 0) { local[index] = { ...local[index], remoteId: response.$id }; saveJson(STORAGE.records, local); }
+  state.remoteRecords = [remoteRecord(response), ...state.remoteRecords.filter((record) => record.remoteId !== response.$id)];
+}
+async function syncPendingRecords() {
+  for (const item of records().filter((item) => !item.remoteId)) {
+    try { await syncRecord(item); } catch (error) { console.warn("Una marcación pendiente sigue sin sincronizar.", error); }
+  }
+}
 function todayKey() {
   return localDateKey();
 }
@@ -234,6 +262,9 @@ async function enterRole(role, account) {
   state.account = account;
   state.peopleReady = loadPeople();
   await state.peopleReady;
+  await loadRecords();
+  await syncPendingRecords();
+  await loadRecords();
   show(role === "marker" ? "markerView" : "adminView");
   if (role === "admin") renderAdmin();
 }
@@ -410,7 +441,7 @@ async function capture() {
     if (!candidates.length) throw new Error("Aún no existen rostros registrados.");
     if (candidates[0].score > .6) throw new Error("Rostro no reconocido. Solicita al administrador volver a registrarlo.");
     if (candidates[1] && candidates[1].score - candidates[0].score < .03) throw new Error("No fue posible identificar el rostro con seguridad.");
-    registerMark(candidates[0].person, candidates[0].score);
+    await registerMark(candidates[0].person, candidates[0].score);
     closeFace();
   } catch (error) {
     $("faceStatus").textContent = error?.message || "No se pudo procesar el rostro.";
@@ -419,8 +450,8 @@ async function capture() {
   }
 }
 
-function registerMark(person, score) {
-  const all = records();
+async function registerMark(person, score) {
+  const all = attendanceRecords();
   const today = todayKey();
   const scheduledShift = scheduleFor(person);
   const personToday = all.filter((item) => item.personId === person.id && item.date === today);
@@ -438,11 +469,18 @@ function registerMark(person, score) {
     locationStatus: "pendiente",
     scheduledShift: scheduledShift ? `${scheduledShift.start}–${scheduledShift.end}` : "Sin turno programado",
   };
-  all.push(item);
-  saveJson(STORAGE.records, all);
+  const local = records();
+  local.push(item);
+  saveJson(STORAGE.records, local);
   const result = $("markerResult");
-  result.className = "result success";
-  result.textContent = `${person.name}: ${type} registrada a las ${formatTime(item.timestamp)}.`;
+  try {
+    await syncRecord(item);
+    result.className = "result success";
+    result.textContent = `${person.name}: ${type} registrada y sincronizada a las ${formatTime(item.timestamp)}.`;
+  } catch (error) {
+    result.className = "result error";
+    result.textContent = `${person.name}: ${type} registrada en este equipo, pendiente de sincronización. Revisa la conexión.`;
+  }
 }
 
 function personById(id) { return PEOPLE.find((person) => person.id === id); }
@@ -464,7 +502,7 @@ function renderAdmin() {
     return row;
   }));
 
-  const todayRecords = records().filter((item) => item.date === todayKey()).reverse();
+  const todayRecords = attendanceRecords().filter((item) => item.date === todayKey()).reverse();
   $("todayMarks").textContent = String(todayRecords.length);
   const recordsList = $("recordsList");
   if (!todayRecords.length) {
@@ -560,7 +598,7 @@ async function saveMonthlySchedule() {
 
 function exportRecords() {
   const rows = [["Persona", "Tipo", "Fecha", "Hora", "Sede", "Distancia facial"]];
-  records().forEach((item) => rows.push([item.personName, item.type, item.date, formatTime(item.timestamp), item.site, item.faceDistance]));
+  attendanceRecords().forEach((item) => rows.push([item.personName, item.type, item.date, formatTime(item.timestamp), item.site, item.faceDistance]));
   const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
   const link = document.createElement("a");
   link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
