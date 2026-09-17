@@ -476,7 +476,7 @@ async function registerMark(person, score) {
     date: today,
     timestamp: new Date().toISOString(),
     faceDistance: Number(score.toFixed(5)),
-    site: "SEDE 1 REMS",
+    site: "PANORAMA",
     locationStatus: "pendiente",
     scheduledShift: scheduledShift ? `${scheduledShift.start}–${scheduledShift.end}` : "Sin turno programado",
   };
@@ -509,7 +509,7 @@ function renderAdmin() {
     row.className = "person-row";
     const hours = schedule ? `Hoy: ${schedule.start}–${schedule.end}` : "Hoy: sin turno programado";
     const origin = schedule?.source === "monthly" ? "Programación mensual" : schedule ? "Cronograma vigente" : "Pendiente de programar";
-    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${escapeHtml(person.name)}</strong><span>DNI: ${escapeHtml(person.dni)} · ${hours}</span><span>${origin} · SEDE 1 REMS</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span><div class="person-actions"><button class="secondary" type="button" data-action="face" data-person-id="${person.id}">${savedFaces[person.id] ? "Actualizar rostro" : "Registrar rostro"}</button><button class="secondary" type="button" data-action="schedule" data-person-id="${person.id}">Horario mensual</button><button class="secondary" type="button" data-action="edit" data-person-id="${person.id}">Editar</button><button class="danger-button" type="button" data-action="delete" data-person-id="${person.id}">Eliminar</button></div>`;
+    row.innerHTML = `<div class="person-avatar">${index + 1}</div><div class="person-data"><strong>${escapeHtml(person.name)}</strong><span>DNI: ${escapeHtml(person.dni)} · ${hours}</span><span>${origin} · PANORAMA</span></div><span class="badge ${savedFaces[person.id] ? "ready" : ""}">${savedFaces[person.id] ? "Rostro registrado" : "Sin registrar"}</span><div class="person-actions"><button class="secondary" type="button" data-action="face" data-person-id="${person.id}">${savedFaces[person.id] ? "Actualizar rostro" : "Registrar rostro"}</button><button class="secondary" type="button" data-action="schedule" data-person-id="${person.id}">Horario mensual</button><button class="secondary" type="button" data-action="edit" data-person-id="${person.id}">Editar</button><button class="danger-button" type="button" data-action="delete" data-person-id="${person.id}">Eliminar</button></div>`;
     return row;
   }));
 
@@ -607,8 +607,8 @@ async function saveMonthlySchedule() {
   finally { button.disabled = false; }
 }
 
-function exportRecords() {
-  if (!window.XLSX) { window.alert("No se pudo preparar el archivo Excel. Revisa la conexión e inténtalo otra vez."); return; }
+async function exportRecords() {
+  if (!window.ExcelJS) { window.alert("No se pudo preparar el archivo Excel. Revisa la conexión e inténtalo otra vez."); return; }
   const month = $("exportMonth").value || todayKey().slice(0, 7);
   const people = [...PEOPLE].sort((a, b) => a.name.localeCompare(b.name, "es"));
   const recordsForMonth = attendanceRecords().filter((item) => item.date?.startsWith(month));
@@ -637,24 +637,31 @@ function exportRecords() {
     });
   });
 
-  const detailRows = daily.map((row) => [row.date, row.person.dni || "por definir", row.person.name, row.person.site || "Personal REMS", "SEDE 1 REMS", row.shift, row.scheduledStart, row.scheduledEnd, row.entrance ? formatDateTime(row.entrance.timestamp) : "", row.exit ? formatDateTime(row.exit.timestamp) : "Pendiente", minutesToHours(row.worked), row.late, 0, row.status, minutesToHours(row.extra), minutesToHours(row.extra)]);
+  const detailRows = daily.map((row) => [row.date, row.person.dni || "por definir", row.person.name, row.person.site || "Personal REMS", "PANORAMA", row.shift, row.scheduledStart, row.scheduledEnd, row.entrance ? formatDateTime(row.entrance.timestamp) : "", row.exit ? formatDateTime(row.exit.timestamp) : "Pendiente", minutesToHours(row.worked), row.late, 0, row.status, minutesToHours(row.extra), minutesToHours(row.extra)]);
   const summaryRows = people.map((person) => {
     const rows = daily.filter((row) => row.person.id === person.id);
-    return [person.dni || "por definir", person.name, "Personal REMS", "SEDE 1 REMS", month, rows.filter((row) => row.status === "LABORABLE").length, rows.filter((row) => row.status !== "LABORABLE").length, minutesToHours(rows.reduce((sum, row) => sum + row.worked, 0)), rows.reduce((sum, row) => sum + row.late, 0), 0, minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0)), minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0))];
+    return [person.dni || "por definir", person.name, "Personal REMS", "PANORAMA", month, rows.filter((row) => row.status === "LABORABLE").length, rows.filter((row) => row.status !== "LABORABLE").length, minutesToHours(rows.reduce((sum, row) => sum + row.worked, 0)), rows.reduce((sum, row) => sum + row.late, 0), 0, minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0)), minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0))];
   });
-  const lateRows = daily.filter((row) => row.late > 0).map((row) => [row.person.dni || "por definir", row.person.name, "Personal REMS", "SEDE 1 REMS", row.date, row.late, 0, "Tardanza registrada sin descuento automático."]);
+  const lateRows = daily.filter((row) => row.late > 0).map((row) => [row.person.dni || "por definir", row.person.name, "Personal REMS", "PANORAMA", row.date, row.late, 0, "Tardanza registrada sin descuento automático."]);
   const addSheet = (workbook, name, title, subtitle, headers, rows, widths) => {
-    const worksheet = XLSX.utils.aoa_to_sheet([[title], [subtitle], headers, ...rows]);
-    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }];
-    worksheet["!cols"] = widths.map((width) => ({ wch: width }));
-    worksheet["!freeze"] = { xSplit: 0, ySplit: 3 };
-    XLSX.utils.book_append_sheet(workbook, worksheet, name);
+    const worksheet = workbook.addWorksheet(name, { views: [{ state: "frozen", ySplit: 3 }] });
+    worksheet.mergeCells(1, 1, 1, headers.length); worksheet.mergeCells(2, 1, 2, headers.length);
+    worksheet.getCell("A1").value = title; worksheet.getCell("A2").value = subtitle;
+    worksheet.getRow(1).height = 27; worksheet.getRow(2).height = 20;
+    worksheet.getCell("A1").font = { name: "Arial", size: 15, bold: true, color: { argb: "FFFFFFFF" } }; worksheet.getCell("A1").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF111114" } }; worksheet.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
+    worksheet.getCell("A2").font = { name: "Arial", size: 10, italic: true, color: { argb: "FF4B250F" } }; worksheet.getCell("A2").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE5DD" } }; worksheet.getCell("A2").alignment = { vertical: "middle", horizontal: "left" };
+    worksheet.addRow(headers); worksheet.getRow(3).height = 30;
+    worksheet.getRow(3).eachCell((cell) => { cell.font = { name: "Arial", size: 10, bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFB5126" } }; cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true }; cell.border = { bottom: { style: "thin", color: { argb: "FFFFFFFF" } } }; });
+    rows.forEach((row, index) => { const output = worksheet.addRow(row); output.height = 19; output.eachCell((cell) => { cell.font = { name: "Arial", size: 10, color: { argb: "FF222227" } }; cell.alignment = { vertical: "middle" }; if (index % 2 === 1) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F7F8" } }; cell.border = { bottom: { style: "hair", color: { argb: "FFD9D9DD" } } }; }); });
+    worksheet.columns.forEach((column, index) => { column.width = widths[index]; });
+    worksheet.autoFilter = { from: { row: 3, column: 1 }, to: { row: Math.max(3, rows.length + 3), column: headers.length } };
+    return worksheet;
   };
-  const workbook = XLSX.utils.book_new();
-  addSheet(workbook, "Resumen mensual", "CONTROL MENSUAL DE ASISTENCIA REMS", `SEDE 1 REMS | ${month} | Sin descuento automático por tardanza`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "MES", "DÍAS LABORABLES", "DÍAS PENDIENTES", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], summaryRows, [14, 34, 18, 20, 11, 16, 16, 20, 16, 12, 24, 20]);
-  addSheet(workbook, "Detalle diario", "DETALLE DIARIO DE ASISTENCIA REMS", `SEDE 1 REMS | ${month} | Horas extra pendientes de confirmación`, ["FECHA", "DNI", "APELLIDOS Y NOMBRES", "CARGO", "SEDE", "TURNO", "ENTRADA PROGRAMADA", "SALIDA PROGRAMADA", "INGRESO REAL", "SALIDA REAL", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "ESTADO DE JORNADA", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], detailRows, [13, 14, 32, 18, 18, 18, 20, 20, 21, 21, 20, 16, 12, 22, 24, 20]);
-  addSheet(workbook, "Tardanzas", "CONTROL DE TARDANZAS REMS", `SEDE 1 REMS | ${month} | Registro informativo, sin descuento`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "FECHA", "TARDANZA (MIN)", "DESCUENTO", "OBSERVACIONES"], lateRows, [14, 34, 18, 20, 13, 18, 12, 50]);
-  XLSX.writeFile(workbook, `asistencia-rems-${month}.xlsx`, { compression: true });
+  const workbook = new ExcelJS.Workbook(); workbook.creator = "REMS"; workbook.created = new Date(); workbook.properties.title = `Asistencia PANORAMA ${month}`;
+  addSheet(workbook, "Resumen mensual", "CONTROL MENSUAL DE ASISTENCIA REMS", `PANORAMA | ${month} | Sin descuento automático por tardanza`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "MES", "DÍAS LABORABLES", "DÍAS PENDIENTES", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], summaryRows, [14, 34, 18, 20, 11, 16, 16, 20, 16, 12, 24, 20]);
+  addSheet(workbook, "Detalle diario", "DETALLE DIARIO DE ASISTENCIA REMS", `PANORAMA | ${month} | Horas extra pendientes de confirmación`, ["FECHA", "DNI", "APELLIDOS Y NOMBRES", "CARGO", "SEDE", "TURNO", "ENTRADA PROGRAMADA", "SALIDA PROGRAMADA", "INGRESO REAL", "SALIDA REAL", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "ESTADO DE JORNADA", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], detailRows, [13, 14, 32, 18, 18, 18, 20, 20, 21, 21, 20, 16, 12, 22, 24, 20]);
+  addSheet(workbook, "Tardanzas", "CONTROL DE TARDANZAS REMS", `PANORAMA | ${month} | Registro informativo, sin descuento`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "FECHA", "TARDANZA (MIN)", "DESCUENTO", "OBSERVACIONES"], lateRows, [14, 34, 18, 20, 13, 18, 12, 50]);
+  const buffer = await workbook.xlsx.writeBuffer(); const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })); link.download = `asistencia-panorama-${month}.xlsx`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
 $("loginForm").addEventListener("submit", loginWithCredentials);
