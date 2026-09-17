@@ -10,6 +10,13 @@ const FALLBACK_PEOPLE = [
   { id: "samir-ruiz", name: "Samir Ruiz", dni: "por definir" },
 ];
 
+const LEGACY_FACE_IDS_BY_DNI = Object.freeze({
+  "41542645": ["giancarlo-bertarelli", "bertarelli-arias-giancarlo"],
+  "73239256": ["claudia-mongrut", "mongrut-cueva-claudia-lucia"],
+  "10629469": ["ricardo-montalvo", "montalvo-machaca-ricardo"],
+  "47205998": ["samir-ruiz", "ruiz-flores-elmy-samir"],
+});
+
 const SCHEDULE_WEEKS = [
   { label: "21 al 26 sep.", start: "2026-09-21", end: "2026-09-26", pattern: "A" },
   { label: "28 sep. al 3 oct.", start: "2026-09-28", end: "2026-10-03", pattern: "B" },
@@ -208,8 +215,10 @@ async function loadPeople() {
     const saved = faces();
     let migratedFaces = false;
     PEOPLE.forEach((person) => {
-      if (person.legacyId !== person.id && saved[person.legacyId] && !saved[person.id]) {
-        saved[person.id] = saved[person.legacyId];
+      const knownKeys = [person.legacyId, ...(LEGACY_FACE_IDS_BY_DNI[String(person.dni)] || [])];
+      const oldDescriptor = knownKeys.map((key) => saved[key]).find(Boolean);
+      if (person.legacyId !== person.id && oldDescriptor && !saved[person.id]) {
+        saved[person.id] = oldDescriptor;
         migratedFaces = true;
       }
       if (person.faceDescriptor && !saved[person.id]) {
