@@ -231,7 +231,7 @@ function remoteRecord(row) {
 async function loadRecords() {
   const tableId = window.REMS_APPWRITE?.markingsTableId;
   if (!tableId) return;
-  try { const response = await databaseRowsRequest(tableId); state.remoteRecords = (response.rows || []).map(remoteRecord); }
+  try { const response = await databaseRowsRequest(tableId, "?queries%5B%5D=limit%281000%29"); state.remoteRecords = (response.rows || []).map(remoteRecord); }
   catch (error) { console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
 }
 async function syncRecord(item) {
@@ -252,6 +252,17 @@ function todayKey() {
 }
 function formatTime(value) {
   return new Date(value).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function formatDateTime(value) {
+  return new Date(value).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function minutesFromTime(value) {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  return Number.isFinite(hours) && Number.isFinite(minutes) ? (hours * 60) + minutes : null;
+}
+function minutesToHours(value) {
+  const minutes = Math.max(0, Math.round(value || 0));
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 function show(view) {
   ["loginView", "markerView", "adminView"].forEach((id) => { $(id).hidden = id !== view; });
@@ -454,7 +465,7 @@ async function registerMark(person, score) {
   const all = attendanceRecords();
   const today = todayKey();
   const scheduledShift = scheduleFor(person);
-  const personToday = all.filter((item) => item.personId === person.id && item.date === today);
+  const personToday = all.filter((item) => item.personId === person.id && item.date === today).sort((first, second) => new Date(first.timestamp) - new Date(second.timestamp));
   const last = personToday.at(-1);
   const type = !last || last.type === "salida" ? "entrada" : "salida";
   const item = {
@@ -597,14 +608,53 @@ async function saveMonthlySchedule() {
 }
 
 function exportRecords() {
-  const rows = [["Persona", "Tipo", "Fecha", "Hora", "Sede", "Distancia facial"]];
-  attendanceRecords().forEach((item) => rows.push([item.personName, item.type, item.date, formatTime(item.timestamp), item.site, item.faceDistance]));
-  const csv = rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
-  link.download = `asistencia-rems-${todayKey()}.csv`;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  if (!window.XLSX) { window.alert("No se pudo preparar el archivo Excel. Revisa la conexión e inténtalo otra vez."); return; }
+  const month = $("exportMonth").value || todayKey().slice(0, 7);
+  const people = [...PEOPLE].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  const recordsForMonth = attendanceRecords().filter((item) => item.date?.startsWith(month));
+  const daily = [];
+
+  people.forEach((person) => {
+    const byDay = new Map();
+    recordsForMonth.filter((item) => item.personId === person.id).forEach((item) => {
+      const entries = byDay.get(item.date) || [];
+      entries.push(item); byDay.set(item.date, entries);
+    });
+    [...byDay.entries()].sort(([first], [second]) => first.localeCompare(second)).forEach(([date, marks]) => {
+      const ordered = marks.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      const entrance = ordered.find((item) => item.type === "entrada");
+      const exit = [...ordered].reverse().find((item) => item.type === "salida");
+      const scheduled = scheduleFor(person, new Date(`${date}T12:00:00`));
+      const inferredShift = scheduled ? `${scheduled.start}–${scheduled.end}` : "";
+      const shift = entrance?.scheduledShift || exit?.scheduledShift || inferredShift;
+      const [scheduledStart, scheduledEnd] = String(shift || "").split("–");
+      const entryMinutes = entrance ? (new Date(entrance.timestamp).getHours() * 60) + new Date(entrance.timestamp).getMinutes() : null;
+      const exitMinutes = exit ? (new Date(exit.timestamp).getHours() * 60) + new Date(exit.timestamp).getMinutes() : null;
+      const late = entrance && minutesFromTime(scheduledStart) !== null ? Math.max(0, entryMinutes - minutesFromTime(scheduledStart)) : 0;
+      const worked = entrance && exit ? Math.max(0, (new Date(exit.timestamp) - new Date(entrance.timestamp)) / 60000) : 0;
+      const extra = exit && minutesFromTime(scheduledEnd) !== null ? Math.max(0, exitMinutes - minutesFromTime(scheduledEnd)) : 0;
+      daily.push({ person, date, entrance, exit, shift: shift || "Sin turno programado", scheduledStart: scheduledStart || "", scheduledEnd: scheduledEnd || "", worked, late, extra, status: entrance && exit ? "LABORABLE" : entrance ? "PENDIENTE DE SALIDA" : "SIN ENTRADA" });
+    });
+  });
+
+  const detailRows = daily.map((row) => [row.date, row.person.dni || "por definir", row.person.name, row.person.site || "Personal REMS", "SEDE 1 REMS", row.shift, row.scheduledStart, row.scheduledEnd, row.entrance ? formatDateTime(row.entrance.timestamp) : "", row.exit ? formatDateTime(row.exit.timestamp) : "Pendiente", minutesToHours(row.worked), row.late, 0, row.status, minutesToHours(row.extra), minutesToHours(row.extra)]);
+  const summaryRows = people.map((person) => {
+    const rows = daily.filter((row) => row.person.id === person.id);
+    return [person.dni || "por definir", person.name, "Personal REMS", "SEDE 1 REMS", month, rows.filter((row) => row.status === "LABORABLE").length, rows.filter((row) => row.status !== "LABORABLE").length, minutesToHours(rows.reduce((sum, row) => sum + row.worked, 0)), rows.reduce((sum, row) => sum + row.late, 0), 0, minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0)), minutesToHours(rows.reduce((sum, row) => sum + row.extra, 0))];
+  });
+  const lateRows = daily.filter((row) => row.late > 0).map((row) => [row.person.dni || "por definir", row.person.name, "Personal REMS", "SEDE 1 REMS", row.date, row.late, 0, "Tardanza registrada sin descuento automático."]);
+  const addSheet = (workbook, name, title, subtitle, headers, rows, widths) => {
+    const worksheet = XLSX.utils.aoa_to_sheet([[title], [subtitle], headers, ...rows]);
+    worksheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }];
+    worksheet["!cols"] = widths.map((width) => ({ wch: width }));
+    worksheet["!freeze"] = { xSplit: 0, ySplit: 3 };
+    XLSX.utils.book_append_sheet(workbook, worksheet, name);
+  };
+  const workbook = XLSX.utils.book_new();
+  addSheet(workbook, "Resumen mensual", "CONTROL MENSUAL DE ASISTENCIA REMS", `SEDE 1 REMS | ${month} | Sin descuento automático por tardanza`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "MES", "DÍAS LABORABLES", "DÍAS PENDIENTES", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], summaryRows, [14, 34, 18, 20, 11, 16, 16, 20, 16, 12, 24, 20]);
+  addSheet(workbook, "Detalle diario", "DETALLE DIARIO DE ASISTENCIA REMS", `SEDE 1 REMS | ${month} | Horas extra pendientes de confirmación`, ["FECHA", "DNI", "APELLIDOS Y NOMBRES", "CARGO", "SEDE", "TURNO", "ENTRADA PROGRAMADA", "SALIDA PROGRAMADA", "INGRESO REAL", "SALIDA REAL", "HORAS TRABAJADAS", "TARDANZA (MIN)", "DESCUENTO", "ESTADO DE JORNADA", "HORAS EXTRA CALCULADAS", "EXTRAS PENDIENTES"], detailRows, [13, 14, 32, 18, 18, 18, 20, 20, 21, 21, 20, 16, 12, 22, 24, 20]);
+  addSheet(workbook, "Tardanzas", "CONTROL DE TARDANZAS REMS", `SEDE 1 REMS | ${month} | Registro informativo, sin descuento`, ["DNI", "APELLIDOS Y NOMBRES", "CARGO", "CENTRO DE TRABAJO", "FECHA", "TARDANZA (MIN)", "DESCUENTO", "OBSERVACIONES"], lateRows, [14, 34, 18, 20, 13, 18, 12, 50]);
+  XLSX.writeFile(workbook, `asistencia-rems-${month}.xlsx`, { compression: true });
 }
 
 $("loginForm").addEventListener("submit", loginWithCredentials);
@@ -634,6 +684,7 @@ $("peopleList").addEventListener("click", (event) => {
 window.addEventListener("pagehide", closeFace);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
+$("exportMonth").value = todayKey().slice(0, 7);
 renderScheduleSummary();
 state.peopleReady = Promise.resolve();
 restoreSession();
