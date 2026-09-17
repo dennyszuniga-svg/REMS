@@ -11,8 +11,9 @@
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Mulish:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css?v=4">
   <script src="assets/face-api.min.js"></script>
-  <script src="appwrite-config.js?v=1"></script>
-  <script src="app.js?v=5" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@17.0.0"></script>
+  <script src="appwrite-config.js?v=2"></script>
+  <script src="app.js?v=6" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -38,11 +39,17 @@
           </div>
         </article>
         <article class="login-card">
-          <span class="eyebrow">ACCESO DE PRUEBA</span>
-          <h2>Selecciona una cuenta</h2>
-          <button id="markerLogin" class="primary" type="button">Entrar como cuenta marcador</button>
-          <button id="adminLogin" class="secondary" type="button">Entrar como administrador</button>
-          <p class="privacy-note">En producción, cada cuenta tendrá contraseña y permisos independientes.</p>
+          <span class="eyebrow">ACCESO RESTRINGIDO</span>
+          <h2>Iniciar sesión</h2>
+          <form id="loginForm" class="login-form">
+            <label for="username">Usuario</label>
+            <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="administrador o marcador" required>
+            <label for="password">Contraseña</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
+            <button id="loginButton" class="primary" type="submit">Ingresar</button>
+          </form>
+          <div id="loginStatus" class="login-status" role="status" aria-live="polite"></div>
+          <p class="privacy-note">Acceso exclusivo para la cuenta administradora y el dispositivo marcador de SEDE 1 REMS.</p>
         </article>
       </section>
 

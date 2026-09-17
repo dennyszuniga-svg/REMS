@@ -44,6 +44,7 @@ const SHIFT_PATTERNS = {
 };
 
 let PEOPLE = [...FALLBACK_PEOPLE];
+let accountApi = null;
 
 const $ = (id) => document.getElementById(id);
 const state = {
@@ -55,7 +56,34 @@ const state = {
   modelsReady: false,
   peopleReady: null,
   peopleSource: "local",
+  account: null,
 };
+
+function getAccountApi() {
+  if (accountApi) return accountApi;
+  const config = window.REMS_APPWRITE;
+  if (!window.Appwrite || !config) throw new Error("No se pudo iniciar el acceso seguro.");
+  const client = new Appwrite.Client()
+    .setEndpoint(config.endpoint)
+    .setProject(config.projectId);
+  accountApi = new Appwrite.Account(client);
+  return accountApi;
+}
+
+function roleForAccount(account) {
+  const labels = account?.labels || [];
+  if (labels.includes("admin")) return "admin";
+  if (labels.includes("marker")) return "marker";
+  const users = window.REMS_APPWRITE?.authUsers || {};
+  if (account?.email === users.administrador) return "admin";
+  if (account?.email === users.marcador) return "marker";
+  return null;
+}
+
+function setLoginStatus(message = "", success = false) {
+  $("loginStatus").textContent = message;
+  $("loginStatus").classList.toggle("success", success);
+}
 
 function personId(name, remoteId) {
   const slug = String(name || "")
@@ -163,14 +191,70 @@ function show(view) {
   ["loginView", "markerView", "adminView"].forEach((id) => { $(id).hidden = id !== view; });
   $("logoutButton").hidden = view === "loginView";
 }
-function login(role) {
+async function enterRole(role, account) {
   state.role = role;
+  state.account = account;
+  state.peopleReady = loadPeople();
+  await state.peopleReady;
   show(role === "marker" ? "markerView" : "adminView");
   if (role === "admin") renderAdmin();
 }
-function logout() {
+
+async function loginWithCredentials(event) {
+  event.preventDefault();
+  const username = $("username").value.trim().toLowerCase();
+  const password = $("password").value;
+  const users = window.REMS_APPWRITE?.authUsers || {};
+  const email = users[username] || (Object.values(users).includes(username) ? username : null);
+  if (!email) {
+    setLoginStatus("Usuario no autorizado. Usa administrador o marcador.");
+    return;
+  }
+
+  $("loginButton").disabled = true;
+  setLoginStatus("Verificando acceso…", true);
+  try {
+    const account = getAccountApi();
+    await account.createEmailPasswordSession({ email, password });
+    const current = await account.get();
+    const role = roleForAccount(current);
+    if (!role) {
+      await account.deleteSession({ sessionId: "current" });
+      throw new Error("Esta cuenta no tiene un perfil autorizado.");
+    }
+    $("password").value = "";
+    setLoginStatus("");
+    await enterRole(role, current);
+  } catch (error) {
+    const message = error?.type === "user_invalid_credentials"
+      ? "Usuario o contraseña incorrectos."
+      : error?.message || "No se pudo iniciar sesión.";
+    setLoginStatus(message);
+  } finally {
+    $("loginButton").disabled = false;
+  }
+}
+
+async function restoreSession() {
+  try {
+    const current = await getAccountApi().get();
+    const role = roleForAccount(current);
+    if (!role) return;
+    await enterRole(role, current);
+  } catch (error) {
+    if (error?.code && error.code !== 401) setLoginStatus("No se pudo verificar la sesión guardada.");
+  }
+}
+
+async function logout() {
   closeFace();
+  try { await getAccountApi().deleteSession({ sessionId: "current" }); } catch { /* La sesión ya pudo haber expirado. */ }
   state.role = null;
+  state.account = null;
+  state.peopleReady = Promise.resolve();
+  $("username").value = "";
+  $("password").value = "";
+  setLoginStatus("");
   show("loginView");
 }
 
@@ -340,8 +424,7 @@ function exportRecords() {
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
-$("markerLogin").addEventListener("click", () => login("marker"));
-$("adminLogin").addEventListener("click", () => login("admin"));
+$("loginForm").addEventListener("submit", loginWithCredentials);
 $("logoutButton").addEventListener("click", logout);
 $("startMarkButton").addEventListener("click", () => openFace("mark"));
 $("closeFaceButton").addEventListener("click", closeFace);
@@ -351,5 +434,6 @@ window.addEventListener("pagehide", closeFace);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
 renderScheduleSummary();
-state.peopleReady = loadPeople();
+state.peopleReady = Promise.resolve();
+restoreSession();
 if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("service-worker.js").catch(() => {});

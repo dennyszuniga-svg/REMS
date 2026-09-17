@@ -59,7 +59,15 @@ button:hover { transform: translateY(-1px); }
 .primary:hover { background: var(--accent-dark); box-shadow: 0 10px 22px rgba(251,81,38,.2); }
 .secondary, .ghost { color: white; background: #202023; border: 1px solid #36363a; }
 .secondary:hover, .ghost:hover { background: #2b2b2f; border-color: var(--accent); }
-.login-card button + button { margin-top: 12px; }
+.login-form { display: grid; gap: 10px; }
+.login-form label { margin-top: 6px; color: #f4f4f5; font-size: .78rem; font-weight: 700; letter-spacing: .04em; }
+.login-form input { width: 100%; padding: 14px 15px; color: white; background: #1b1b1e; border: 1px solid #3a3a3f; border-radius: 3px 13px 3px 3px; font: inherit; transition: border-color .16s, box-shadow .16s; }
+.login-form input::placeholder { color: #7f8188; }
+.login-form input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(251,81,38,.14); }
+.login-form .primary { margin-top: 10px; }
+.login-form button:disabled { cursor: wait; opacity: .65; transform: none; }
+.login-status { min-height: 22px; margin-top: 14px; color: #ffaaa2; font-size: .82rem; line-height: 1.45; }
+.login-status.success { color: #8be0be; }
 .privacy-note, .helper { color: var(--muted); font-size: .88rem; line-height: 1.5; }
 .privacy-note { margin: 26px 0 0; }
 .view { display: grid; gap: 22px; }

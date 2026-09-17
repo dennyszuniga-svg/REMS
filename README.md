@@ -11,7 +11,7 @@ Prototipo inicial de marcación facial para un celular fijo en **SEDE 1 REMS**.
 - Horarios: turnos rotativos por persona y semana, según el archivo `Horario equipo panorama.xlsx`
 - Personal inicial: Giancarlo Bertarelli, Claudia Mongrut, Ricardo Montalvo y Samir Ruiz
 - DNI inicial: por definir
-- Cuentas previstas: administrador y marcador
+- Cuentas del sistema: administrador (gestiona personal y registro facial) y marcador (tablet fija de asistencia)
 
 ## Probar localmente
 
@@ -22,6 +22,10 @@ npx serve .
 ```
 
 Luego abre `/rems-marcacion/` desde el enlace local mostrado.
+
+## Acceso web
+
+La aplicación está preparada para publicarse como sitio estático mediante GitHub Pages. El acceso está protegido por Appwrite y no permite crear cuentas desde la web.
 
 ## Alcance del prototipo
 
