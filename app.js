@@ -60,6 +60,7 @@ const state = {
   schedulePersonId: null,
   scheduleDraft: {},
   remoteRecords: [],
+  refreshing: false,
 };
 
 function getAccountApi() {
@@ -136,6 +137,14 @@ function parseMonthlySchedule(value) {
   } catch { return {}; }
 }
 
+function parseFaceDescriptor(value) {
+  if (!value) return null;
+  try {
+    const descriptor = typeof value === "string" ? JSON.parse(value) : value;
+    return Array.isArray(descriptor) && descriptor.length === 128 && descriptor.every(Number.isFinite) ? descriptor : null;
+  } catch { return null; }
+}
+
 function scheduleFor(person, date = new Date()) {
   const day = localDateKey(date);
   const month = day.slice(0, 7);
@@ -194,12 +203,17 @@ async function loadPeople() {
       name: row.nombre,
       dni: row.dni || "por definir",
       monthlySchedule: parseMonthlySchedule(row.horario_mensual),
+      faceDescriptor: parseFaceDescriptor(row.rostro_descriptor),
     }));
     const saved = faces();
     let migratedFaces = false;
     PEOPLE.forEach((person) => {
       if (person.legacyId !== person.id && saved[person.legacyId] && !saved[person.id]) {
         saved[person.id] = saved[person.legacyId];
+        migratedFaces = true;
+      }
+      if (person.faceDescriptor && !saved[person.id]) {
+        saved[person.id] = person.faceDescriptor;
         migratedFaces = true;
       }
     });
@@ -247,6 +261,19 @@ async function syncPendingRecords() {
     try { await syncRecord(item); } catch (error) { console.warn("Una marcación pendiente sigue sin sincronizar.", error); }
   }
 }
+async function syncFaceDescriptor(person, descriptor) {
+  if (!person?.appwriteId) throw new Error("No se pudo identificar al personal para sincronizar su rostro.");
+  await personalRequest(`/${encodeURIComponent(person.appwriteId)}`, "PATCH", { data: { rostro_descriptor: JSON.stringify(descriptor) } });
+}
+async function syncPendingFaces() {
+  if (state.role !== "admin") return;
+  const saved = faces();
+  for (const person of PEOPLE) {
+    if (saved[person.id] && !person.faceDescriptor) {
+      try { await syncFaceDescriptor(person, saved[person.id]); } catch (error) { console.warn("Un rostro pendiente sigue sin sincronizar.", error); }
+    }
+  }
+}
 function todayKey() {
   return localDateKey();
 }
@@ -273,6 +300,8 @@ async function enterRole(role, account) {
   state.account = account;
   state.peopleReady = loadPeople();
   await state.peopleReady;
+  await syncPendingFaces();
+  if (role === "admin") await loadPeople();
   await loadRecords();
   await syncPendingRecords();
   await loadRecords();
@@ -361,6 +390,16 @@ async function logout() {
   show("loginView");
 }
 
+async function refreshSharedData() {
+  if (!state.role || state.refreshing) return;
+  state.refreshing = true;
+  try {
+    await Promise.all([loadPeople(), loadRecords()]);
+    if (state.role === "admin") await syncPendingFaces();
+    if (state.role === "admin") renderAdmin();
+  } finally { state.refreshing = false; }
+}
+
 async function loadModels() {
   if (state.modelsReady) return;
   if (!window.faceapi) throw new Error("No se pudo iniciar el reconocimiento facial.");
@@ -437,9 +476,17 @@ async function capture() {
         return;
       }
       const saved = faces();
-      saved[state.selectedPerson.id] = average(state.enrollmentSamples);
+      const enrolledDescriptor = average(state.enrollmentSamples);
+      saved[state.selectedPerson.id] = enrolledDescriptor;
       saveJson(STORAGE.faces, saved);
+      try {
+        await syncFaceDescriptor(state.selectedPerson, enrolledDescriptor);
+      } catch (error) {
+        $("faceStatus").textContent = "El rostro quedó registrado en esta computadora, pero falta sincronizarlo. Revisa la conexión e inténtalo otra vez.";
+        return;
+      }
       closeFace();
+      await loadPeople();
       renderAdmin();
       return;
     }
@@ -689,7 +736,9 @@ $("peopleList").addEventListener("click", (event) => {
   if (button.dataset.action === "delete") deletePerson(person);
 });
 window.addEventListener("pagehide", closeFace);
+window.addEventListener("focus", refreshSharedData);
 window.setInterval(() => { $("markerClock").textContent = new Date().toLocaleTimeString("es-PE"); }, 1000);
+window.setInterval(refreshSharedData, 20000);
 $("markerClock").textContent = new Date().toLocaleTimeString("es-PE");
 $("exportMonth").value = todayKey().slice(0, 7);
 renderScheduleSummary();
