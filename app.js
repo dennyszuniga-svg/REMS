@@ -180,6 +180,7 @@ async function databaseRowsRequest(tableId, path = "", method = "GET", data) {
   const response = await fetch(`${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(tableId)}/rows${path}`, {
     method,
     credentials: "include",
+    cache: method === "GET" ? "no-store" : "default",
     headers: { "Content-Type": "application/json", "X-Appwrite-Project": config.projectId },
     ...(data ? { body: JSON.stringify(data) } : {}),
   });
@@ -254,7 +255,7 @@ function remoteRecord(row) {
 async function loadRecords() {
   const tableId = window.REMS_APPWRITE?.markingsTableId;
   if (!tableId) return;
-  try { const response = await databaseRowsRequest(tableId, "?queries%5B%5D=limit%281000%29"); state.remoteRecords = (response.rows || []).map(remoteRecord); }
+  try { const response = await databaseRowsRequest(tableId, `?queries%5B%5D=limit%281000%29&_=${Date.now()}`); state.remoteRecords = (response.rows || []).map(remoteRecord); }
   catch (error) { console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
 }
 async function syncRecord(item) {
@@ -753,4 +754,4 @@ $("exportMonth").value = todayKey().slice(0, 7);
 renderScheduleSummary();
 state.peopleReady = Promise.resolve();
 restoreSession();
-if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("service-worker.js").catch(() => {});
+if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" }).then((registration) => registration.update()).catch(() => {});
