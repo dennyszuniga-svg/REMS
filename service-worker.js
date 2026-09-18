@@ -1,4 +1,4 @@
-const CACHE = "rems-asistencia-v22";
+const CACHE = "rems-asistencia-v23";
 const FILES = [
   "./",
   "./index.html",
