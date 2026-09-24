@@ -185,7 +185,7 @@ async function databaseRowsRequest(tableId, path = "", method = "GET", data) {
     ...(data ? { body: JSON.stringify(data) } : {}),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.message || "No se pudo actualizar el personal.");
+  if (!response.ok) throw Object.assign(new Error(payload.message || "No se pudo conectar con la base de datos."), { code: response.status, type: payload.type });
   return payload;
 }
 
@@ -251,19 +251,52 @@ function attendanceRecords() { return [...state.remoteRecords, ...records().filt
 function remoteRecord(row) {
   return { id: row.$id, remoteId: row.$id, personId: row.persona_id, personName: row.persona_nombre, type: row.tipo, date: row.fecha, timestamp: row.momento, site: row.sede, scheduledShift: row.turno || "Sin turno programado", faceDistance: Number(row.distancia || 0) };
 }
-async function loadRecords() {
+async function loadRecords(strict = false) {
   const tableId = window.REMS_APPWRITE?.markingsTableId;
   if (!tableId) return;
   try { const response = await databaseRowsRequest(tableId, `?_=${Date.now()}`); state.remoteRecords = (response.rows || []).map(remoteRecord); }
-  catch (error) { console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
+  catch (error) { if (strict) throw error; console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
 }
+const recordUploads = new Map();
 async function syncRecord(item) {
+  if (recordUploads.has(item.id)) return recordUploads.get(item.id);
+  const upload = uploadRecord(item);
+  recordUploads.set(item.id, upload);
+  try { return await upload; } finally { recordUploads.delete(item.id); }
+}
+async function uploadRecord(item) {
   const tableId = window.REMS_APPWRITE?.markingsTableId;
   if (!tableId) throw new Error("No se configuró la tabla de marcaciones.");
   const response = await databaseRowsRequest(tableId, "", "POST", { rowId: "unique()", data: { persona_id: item.personId, persona_nombre: item.personName, tipo: item.type, fecha: item.date, momento: item.timestamp, sede: item.site, turno: item.scheduledShift, distancia: String(item.faceDistance) } });
   const local = records(); const index = local.findIndex((record) => record.id === item.id);
   if (index >= 0) { local[index] = { ...local[index], remoteId: response.$id }; saveJson(STORAGE.records, local); }
   state.remoteRecords = [remoteRecord(response), ...state.remoteRecords.filter((record) => record.remoteId !== response.$id)];
+}
+async function synchronizeNow() {
+  const button = $("syncNowButton");
+  if (button.disabled || !state.role) return;
+  button.disabled = true;
+  const status = $("syncStatus");
+  status.textContent = "Comprobando conexión y enviando pendientes…";
+  try {
+    await loadRecords(true);
+    let sent = 0;
+    for (const item of records().filter((record) => !record.remoteId)) {
+      await syncRecord(item);
+      sent++;
+    }
+    await loadRecords(true);
+    status.textContent = `Sincronizado. ${sent} marcaciones enviadas desde este equipo. Sin pendientes locales.`;
+    if (state.role === "admin") renderAdmin();
+  } catch (error) {
+    const pending = records().filter((record) => !record.remoteId).length;
+    const reason = /paused|project_paused/i.test(`${error.type} ${error.message}`)
+      ? "Proyecto pausado. Restaura REMS en la consola de Appwrite."
+      : error.code === 401 ? "Sesión vencida. Vuelve a ingresar en este navegador."
+      : error.code === 403 ? "La cuenta no tiene permiso para sincronizar. Contacta al administrador."
+      : "No se pudo sincronizar. Revisa la conexión e inténtalo nuevamente.";
+    status.textContent = `${reason} Pendientes en este equipo: ${pending}. Conserva los datos de este navegador.`;
+  } finally { button.disabled = false; }
 }
 async function syncPendingRecords() {
   for (const item of records().filter((item) => !item.remoteId)) {
@@ -303,6 +336,7 @@ function minutesToHours(value) {
 function show(view) {
   ["loginView", "markerView", "adminView"].forEach((id) => { $(id).hidden = id !== view; });
   $("logoutButton").hidden = view === "loginView";
+  $("syncControls").hidden = view === "loginView";
 }
 async function enterRole(role, account) {
   state.role = role;
@@ -722,6 +756,7 @@ async function exportRecords() {
 
 $("loginForm").addEventListener("submit", loginWithCredentials);
 $("logoutButton").addEventListener("click", logout);
+$("syncNowButton").addEventListener("click", synchronizeNow);
 $("startMarkButton").addEventListener("click", () => openFace("mark"));
 $("closeFaceButton").addEventListener("click", closeFace);
 $("captureButton").addEventListener("click", capture);
