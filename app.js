@@ -254,7 +254,23 @@ function remoteRecord(row) {
 async function loadRecords(strict = false) {
   const tableId = window.REMS_APPWRITE?.markingsTableId;
   if (!tableId) return;
-  try { const response = await databaseRowsRequest(tableId, `?_=${Date.now()}`); state.remoteRecords = (response.rows || []).map(remoteRecord); }
+  try {
+    const rows = [];
+    let cursor;
+    do {
+      const params = new URLSearchParams({ ttl: "0", _: String(Date.now()) });
+      params.append("queries[]", JSON.stringify({ method: "limit", values: [100] }));
+      if (cursor) params.append("queries[]", JSON.stringify({ method: "cursorAfter", values: [cursor] }));
+      const response = await databaseRowsRequest(tableId, `?${params}`);
+      const page = response.rows || [];
+      rows.push(...page);
+      if (page.length < 100) break;
+      const next = page.at(-1).$id;
+      if (next === cursor) throw new Error("No se pudo completar la lectura de marcaciones.");
+      cursor = next;
+    } while (true);
+    state.remoteRecords = rows.map(remoteRecord);
+  }
   catch (error) { if (strict) throw error; console.warn("No se pudieron cargar las marcaciones sincronizadas.", error); }
 }
 const recordUploads = new Map();
@@ -552,6 +568,12 @@ async function capture() {
 }
 
 async function registerMark(person, score) {
+  try { await loadRecords(true); }
+  catch {
+    $("markerResult").className = "result error";
+    $("markerResult").textContent = "No se pudo consultar la última marcación. Revisa la conexión y vuelve a marcar. Esta marcación todavía no se registró.";
+    return;
+  }
   const all = attendanceRecords();
   const today = todayKey();
   const scheduledShift = scheduleFor(person);
@@ -698,6 +720,8 @@ async function saveMonthlySchedule() {
 }
 
 async function exportRecords() {
+  try { await loadRecords(true); }
+  catch { window.alert("No se pudo cargar la asistencia completa. Revisa la conexión antes de exportar."); return; }
   if (!window.ExcelJS) { window.alert("No se pudo preparar el archivo Excel. Revisa la conexión e inténtalo otra vez."); return; }
   const month = $("exportMonth").value || todayKey().slice(0, 7);
   const people = [...PEOPLE].sort((a, b) => a.name.localeCompare(b.name, "es"));
