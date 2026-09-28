@@ -180,6 +180,7 @@ async function databaseRowsRequest(tableId, path = "", method = "GET", data) {
   const response = await fetch(`${config.endpoint}/tablesdb/${encodeURIComponent(config.databaseId)}/tables/${encodeURIComponent(tableId)}/rows${path}`, {
     method,
     credentials: "include",
+    signal: AbortSignal.timeout(10000),
     cache: method === "GET" ? "no-store" : "default",
     headers: { "Content-Type": "application/json", "X-Appwrite-Project": config.projectId },
     ...(data ? { body: JSON.stringify(data) } : {}),
@@ -295,14 +296,15 @@ async function synchronizeNow() {
   const status = $("syncStatus");
   status.textContent = "Comprobando conexión y enviando pendientes…";
   try {
-    await loadRecords(true);
     let sent = 0;
     for (const item of records().filter((record) => !record.remoteId)) {
       await syncRecord(item);
       sent++;
     }
     await loadRecords(true);
-    status.textContent = `Sincronizado. ${sent} marcaciones enviadas desde este equipo. Sin pendientes locales.`;
+    await loadPeople();
+    const remaining = records().filter((record) => !record.remoteId).length;
+    status.textContent = `Información recargada. ${sent} marcaciones enviadas. Pendientes en este equipo: ${remaining}.`;
     if (state.role === "admin") renderAdmin();
   } catch (error) {
     const pending = records().filter((record) => !record.remoteId).length;
@@ -568,13 +570,10 @@ async function capture() {
 }
 
 async function registerMark(person, score) {
+  let offline = false;
   try { await loadRecords(true); }
-  catch {
-    $("markerResult").className = "result error";
-    $("markerResult").textContent = "No se pudo consultar la última marcación. Revisa la conexión y vuelve a marcar. Esta marcación todavía no se registró.";
-    return;
-  }
-  const all = attendanceRecords();
+  catch { offline = true; }
+  const all = offline ? [...state.remoteRecords, ...records()] : attendanceRecords();
   const today = todayKey();
   const scheduledShift = scheduleFor(person);
   const personToday = all.filter((item) => item.personId === person.id && item.date === today).sort((first, second) => new Date(first.timestamp) - new Date(second.timestamp));
