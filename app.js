@@ -569,6 +569,25 @@ async function capture() {
   }
 }
 
+function announceMark(type, name) {
+  // Audio is optional: an unavailable voice must never interrupt attendance.
+  try {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    const message = new window.SpeechSynthesisUtterance(
+      `${type === "entrada" ? "Bienvenido" : "Salida registrada"}, ${name}`
+    );
+    message.lang = "es-PE";
+    const voices = window.speechSynthesis.getVoices();
+    const voice = voices.find((item) => item.lang.toLowerCase() === "es-pe")
+      || voices.find((item) => /^es[-_]/i.test(item.lang));
+    if (voice) message.voice = voice;
+    message.rate = 0.95;
+    message.volume = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(message);
+  } catch (error) { console.warn("Aviso de voz no disponible.", error); }
+}
+
 async function registerMark(person, score) {
   let offline = false;
   try { await loadRecords(true); }
@@ -594,6 +613,7 @@ async function registerMark(person, score) {
   const local = records();
   local.push(item);
   saveJson(STORAGE.records, local);
+  announceMark(type, person.name);
   const result = $("markerResult");
   try {
     await syncRecord(item);
